@@ -3,7 +3,7 @@
 (DTE-151 / DTE-152). Same look as ~/dsp-analysis-sandbox/docs/aws-hld.drawio (approved 10/22):
 official mxgraph.aws4 icons and groups, numbered flow edges, dashed = not built / trial / pending.
 
-One-shot generator: once Paul edits the .drawio in draw.io, edit the .drawio directly, don't rerun.
+This script is the master (Paul, 10/28): change the script and rerun; don't hand-edit the .drawio.
 
 Sources: from-3po/dsp-poc-decisions-paul_2026-10-27_2220.md, from-3po/dsp-poc-what-monday-delivers_2026-10-27_2220.md,
 from-3po/dsp-iceberg-pipeline-poc-spec-for-R3_2026-10-24_1645.md, dsp-key-spec-2026-10-27.md.
@@ -18,7 +18,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import build_dsp_poc_sequence_diagram as seq  # noqa: E402
 
-OUT = '/home/pgadmin/relevate-health/Docs/diagrams/dsp-poc-hld-2026-10-28.drawio'
+OUT = str(Path(__file__).resolve().parent / 'dsp-poc-hld-2026-10-28.drawio')
+STEP_NUMBERS = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳"
 
 GROUP_POINTS = ("points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],"
                 "[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];outlineConnect=0;gradientColor=none;html=1;"
@@ -76,6 +77,8 @@ def edge(cid, src, tgt, value="", color="#232F3E", dashed=False, exit=None, entr
         style += f"exitX={exit[0]};exitY={exit[1]};exitDx=0;exitDy=0;"
     if entry:
         style += f"entryX={entry[0]};entryY={entry[1]};entryDx=0;entryDy=0;"
+    if value and value[0] in STEP_NUMBERS:  # step number: 14 px bold, rest of the label stays 11 px
+        value = f'<b><font style="font-size: 14px">{value[0]}</font></b>{value[1:]}'
     geo_x = f' x="{pos}"' if pos is not None else ""
     pts = ""
     if points:
