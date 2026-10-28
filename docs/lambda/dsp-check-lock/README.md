@@ -16,6 +16,45 @@ in flight, the new one discards itself.
 | `iam-policy.json` | The one permission the Lambda needs |
 | `test_dsp_check_lock.py` | Unit tests against moto's fake Step Functions (3 tests, all passing 2026-10-28) |
 
+## Where it sits in the pipeline
+
+CheckLock is **step 2** in the HLD and the sequence diagram (`diagrams/dsp-poc-hld-2026-10-28.png`; the
+blue numbered circles match between the two). It is the first task the state machine runs:
+
+1. **The heartbeat fires** (step 1). EventBridge only starts the state machine; it never calls this Lambda.
+2. **The `CheckLock` state runs first** (`"StartAt": "CheckLock"`). It is a Task state whose only job is to
+   invoke the `dsp-check-lock` Lambda, passing the two ARNs.
+3. **The Lambda answers** `locked: true` or `false`.
+4. **`IsLocked` (a Choice state, no code)** routes the run to `SkippedAlreadyRunning` or on to `FindWork`
+   (step 3).
+
+The state and the Lambda are two halves of one step: the `CheckLock` state is the box in the Step Functions
+graph; the `dsp-check-lock` Lambda is the Python code that box runs. Nothing else calls this Lambda, and every
+run calls it exactly once, before any S3 work begins. That ordering is the point: if another run is in
+progress, this run stops before it touches any data.
+
+## Scope: what this Lambda touches
+
+Very little. One read-only call to Step Functions, and a yes/no answer back.
+
+- **No S3.** It doesn't read or write any bucket, file, table or database. Its only permission is
+  `states:ListExecutions` on the pipeline's own state machine, so it couldn't touch S3 even if the code tried.
+- **It doesn't decide whether to skip.** The `IsLocked` Choice state makes that call based on `locked`.
+- **It doesn't stop, cancel or wait for the other run.** It only reports that it exists.
+- **It doesn't create or hold a lock.** Nothing is written, so there's nothing to release. The lock is
+  Step Functions' own record of what's running.
+- **It doesn't set the 25-minute timeout.** That's a setting on the state machine itself.
+- **It doesn't look for work.** That's the next step, `FindWork`, a separate Lambda.
+
+Where the S3 work happens instead:
+
+| Step (HLD number) | Touches S3? |
+|---|---|
+| **2 CheckLock** (this one) | No. Step Functions only |
+| **3 FindWork** | Reads only: lists input files, checks which output Parquet files exist |
+| **4-9 ProcessHours → Transform** | Reads the input CSV; writes the id ledger, quarantine, Parquet (Writer A) and S3 Tables (Writer B) |
+| **10 RecordManifest** | Writes manifest entries |
+
 ## What the step does
 
 `CheckLock` is the first state in the state machine. It makes sure only one run happens at a time, like
@@ -127,6 +166,43 @@ python -m venv .venv
 .venv/bin/pip install boto3 "moto[stepfunctions]" pytest
 .venv/bin/python -m pytest -q
 ```
+
+## What comes next: FindWork (step 3)
+
+If the run isn't locked, the next real task is `FindWork`, a small Python Lambda that answers "which hours
+still need processing?":
+
+1. Lists the input files for the last 21 days (Jesse's lookback window).
+2. Works out the file-hour each input file belongs to.
+3. Checks the **Parquet bucket** for each hour: do all 6 output files (one per publisher) exist?
+4. Keeps only the unfinished hours, oldest first, capped at 6 per run so a backlog drains over several
+   heartbeats.
+5. Returns the list; `ProcessHours` (a Map state, max 2 in parallel) runs the transform once per hour.
+
+| | CheckLock | FindWork |
+|---|---|---|
+| Touches S3? | No | Yes, read-only. It writes nothing. |
+| IAM | `states:ListExecutions` | `s3:ListBucket` on the input and Parquet buckets (maybe `s3:GetObject`/HeadObject, depending on the check) |
+| Returns | `locked` true/false | A list of hours to process |
+
+Notes carried from the 10/27-10/28 decisions:
+
+- **6 files per hour, not 3.** Paul's 10/27 decision: one file per publisher, written even when a publisher
+  has no rows. Without the empty file, that hour would look unfinished forever and be reprocessed on every
+  heartbeat.
+- **The POC owns two output buckets** (Paul, 10/28): `rhde-pg-dsp-poc-parquet`, a general-purpose S3 bucket
+  for Path A (the contract), and `rhde-pg-dsp-poc-iceberg`, an S3 Tables **table bucket** for Path B (the
+  Iceberg trial). Two buckets are required, not just preferred: Iceberg tables in S3 Tables can only live in a
+  table bucket, which has its own `s3tables` APIs and policies.
+- **FindWork checks only the Parquet bucket.** Path A is the contract, so an hour counts as done when its 6
+  Parquet files exist; Path B never blocks Path A. Known gap: if Writer B fails for an hour, FindWork won't
+  retry it. Catching up Path B would need its own check later.
+- **FindWork and the transform must agree on the output layout**, for example
+  `<prefix>/date=YYYY-MM-DD/hour=HH/<publisher>.parquet`. If they disagree, FindWork never finds the files
+  the transform wrote and reprocesses the same hours every heartbeat. Bucket and prefix should come from
+  environment variables, not be hard-coded.
+- FindWork is where the pipeline's idempotency really comes from, which is why CheckLock's best-effort lock
+  is good enough.
 
 ## R3's take
 
