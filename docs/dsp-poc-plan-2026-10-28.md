@@ -141,13 +141,13 @@ Not covered by the template: streaming feeds such as the new DSP's full avails s
 ## 8. Assumptions
 
 | # | Assumption | If it's wrong |
-|---|---|---|
+|----|------------------------------------------------|------------------------------|
 | A1 | The largest hour finishes in Lambda in under 5 minutes. Phase 0 measures this first. | The same container image runs on Fargate. No redesign. |
-| A2 | Key spec D1-D12 holds (DTE-132, awaiting Jesse's sign-off). | Rule changes are edits inside the transform. |
+| A2 | The row-key rules hold as written up on 10/27 (key spec, Jira DTE-132). They record Jesse's decisions from 10/14 to 10/27: the key is the publisher plus the vendor's `transaction_id`; only exact duplicates are collapsed; an id reused with different data, or seen under two publishers, is quarantined; Test Account and blank-publisher rows are dropped; no bot, NPI or restatement handling yet; a replay replaces the whole file. **Waiting on:** Jesse to confirm the write-up matches what he decided. | If a rule changes, it's an edit inside the transform; nothing around it changes. |
 | A3 | Six output files per hour, one per publisher. Jesse's 10/23 example had three. | The publisher list is a config file: 6 to 3 is a config change. Need to know what happens to Relevate Games (57%) and Office Ally (14%) if it's 3. |
 | A4 | The dataset-wide id check looks at full history. | The window is a config value; shrink it once the archive and warehouse retention questions are answered. |
 | A5 | Enrichment is a pass-through stub until Cillian's factory endpoint is ready. | The transform calls enrichment through one interface; swapping the stub is contained. |
-| A6 | The POC reads a curated copy of the DSP files in the sandbox until cross-account access (DTE-147) is granted. | A true end to end waits on DTE-147; everything else is unaffected. |
+| A6 | The POC reads a curated copy of the DSP files in the sandbox until it is granted read access to the live DSP files in the source account (Jira DTE-147). | A true end-to-end run waits on that access; everything else is unaffected. |
 | A7 | A Python Lambda is acceptable next to the Node service. | Fallback is the EC2 shell-out. |
 | A8 | Parallel hours don't hide id reuse. Two hours run at once, so the id check runs once per batch of hours (or one at a time for that step). | Proposed; to confirm during Phase 3. |
 
@@ -224,6 +224,7 @@ Plus: S3 Tables holds exactly the same rows as the Parquet files for every hour 
 
 | Question | Who |
 |---|---|
+| Do the row-key rules in A2 match what you decided? | Jesse |
 | Six publisher files, or three? If three, what happens to Relevate Games and Office Ally? | Jesse and team |
 | Age-based archive: how long does DSP data stay active? (sets the id-check window) | Jesse and team |
 | How long does Redshift keep DSP history, and does it treat the key as unique? | Jesse and team |
@@ -232,7 +233,7 @@ Plus: S3 Tables holds exactly the same rows as the Parquet files for every hour 
 | Whole-file reject threshold (Scott floated ~0.5%) | Jesse and team |
 | Who raises reused ids with the vendor, and what should the pipeline report? | Jesse, Scott |
 | Python Lambda OK next to the Node service? | Jesse and team |
-| Cross-account read on the source bucket (DTE-147) | Jesse and team |
+| Read access for the POC to the live DSP files in the source account (DTE-147): can it be granted, and when? | Jesse and team |
 
 ## 14. Next steps after the demo
 

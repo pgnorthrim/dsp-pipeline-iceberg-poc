@@ -28,6 +28,6 @@ Target: `dsp-poc-plan-2026-10-28.md` (+ regenerate .docx; check Word lock first)
    rule Cillian's Glue jobs use (Glue max concurrency 1 + Step Functions retry); ours skips instead of
    waiting, because the next run catches up." Add a short "how the lock works" note in section 5. Cite:
    Cillian, Slack 10/28 (screenshot). Jesse's 10/23 "discard" description was loose.
-5. Assumptions table "#" column width fix in the .docx.
+5. DONE 2026-10-28 - Assumptions table "#" column width fix in the .docx.
 6. DONE 2026-10-28 11:08 - **Two-path overview figure** (`diagrams/dsp-poc-two-paths-2026-10-28.png`): insert in section 5 "What the POC is"
    (or section 1 Summary) once Paul OKs the picture.
