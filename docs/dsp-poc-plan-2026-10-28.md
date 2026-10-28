@@ -142,7 +142,7 @@ Not covered by the template: streaming feeds such as the new DSP's full avails s
 
 | # | Assumption | If it's wrong |
 |----|------------------------------------------------|------------------------------|
-| A1 | The largest hour finishes in Lambda in under 5 minutes. Phase 0 measures this first. | The same container image runs on Fargate. No redesign. |
+| A1 | Each hour fits comfortably in Lambda. Lambda allows up to 15 minutes per call, but a full run (up to 6 hours, 2 at a time, so 3 rounds) must finish inside the 25-minute lock timeout, so the working target is about 5 minutes per hour. Phase 0 measures this first. | In order: tune settings (fewer hours per run, more parallel calls, more Lambda memory); split a large hour into chunks inside the Step Function; or run the same container image on Fargate. No redesign. |
 | A2 | The row-key rules hold as written up on 10/27 (key spec, Jira DTE-132). They record Jesse's decisions from 10/14 to 10/27: the key is the publisher plus the vendor's `transaction_id`; only exact duplicates are collapsed; an id reused with different data, or seen under two publishers, is quarantined; Test Account and blank-publisher rows are dropped; no bot, NPI or restatement handling yet; a replay replaces the whole file. **Waiting on:** Jesse to confirm the write-up matches what he decided. | If a rule changes, it's an edit inside the transform; nothing around it changes. |
 | A3 | Six output files per hour, one per publisher. Jesse's 10/23 example had three. | The publisher list is a config file: 6 to 3 is a config change. Need to know what happens to Relevate Games (57%) and Office Ally (14%) if it's 3. |
 | A4 | The dataset-wide id check looks at full history. | The window is a config value; shrink it once the archive and warehouse retention questions are answered. |
@@ -159,7 +159,7 @@ Not covered by the template: streaming feeds such as the new DSP's full avails s
 
 **Success (each pass/fail):**
 
-- [ ] The largest hour finishes in under 5 minutes in Lambda, or the Fargate route works.
+- [ ] A full run of 6 hours finishes inside the 25-minute lock timeout (about 5 minutes per hour, well under Lambda's 15-minute limit), or one of the fallbacks in A1 is shown to work.
 - [ ] One correct Parquet file per publisher per hour, matching the agreed output schema **[TBD: output schema draft, for Jesse and team to review]**. Empty hours produce an empty file, not a missing one.
 - [ ] Rerunning an hour gives identical output, with no duplicates.
 - [ ] An overlapping trigger is discarded, never run twice.

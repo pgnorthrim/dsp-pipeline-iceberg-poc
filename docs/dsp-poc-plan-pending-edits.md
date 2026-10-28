@@ -2,7 +2,7 @@
 
 Target: `dsp-poc-plan-2026-10-28.md` (+ regenerate .docx; check Word lock first).
 
-1. **Lambda timing wording.** Lambda cap is 15 min; the 5-min target comes from the lock budget
+1. DONE 2026-10-28 (A1 + checklist) - **Lambda timing wording.** Lambda cap is 15 min; the 5-min target comes from the lock budget
    (6 hours/run, 2 at a time = 3 waves inside the 25-min state-machine timeout).
    - A1 (line ~128): "One scheduled run (up to 6 hours, 2 at a time) finishes inside the 25-minute lock
      timeout, so each hour needs to finish in about 5 minutes. Lambda's own cap is 15 minutes. Phase 0
