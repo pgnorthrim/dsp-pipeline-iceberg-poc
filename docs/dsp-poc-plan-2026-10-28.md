@@ -13,11 +13,17 @@ date: "2026-10-28"
 
 ## 1. Summary
 
-By Monday 11/02, the DSP v1 pipeline will run end to end in the sandbox. Every hour it takes one gzipped DSP file and produces one clean Parquet file per publisher: keyed, de-duplicated, with bad rows quarantined in the team's existing format. That is the deliverable (**Path A**), and it becomes the pipe version on 11/07.
+By Monday 11/02, the DSP v1 pipeline runs end to end in the sandbox.
 
-Alongside it, the same rows are written to an S3 Tables (Iceberg) table (**Path B**), so the team can judge S3 Tables on real data, as Jesse asked on 10/23. Path B is time-boxed and can never block Path A: there is one transform and two writers, and nothing on A's path reads from B.
-
-The DSP-specific logic lives inside the transform and won't carry over to other feeds. What the POC really tests is everything around it: trigger, lock, fan-out, safe writes, replays, manifest and quarantine, plus a fair storage comparison. If it works, the team gets a candidate template for its other scheduled, file-based feeds.
+- **Path A (the deliverable):** every hour, one gzipped DSP file becomes one clean Parquet file per publisher.
+  - Keyed and de-duplicated.
+  - Bad rows quarantined in the team's existing format.
+  - Becomes the pipe version on 11/07.
+- **Path B (time-boxed trial):** the same rows also go to an S3 Tables (Iceberg) table, so the team can judge S3 Tables on real data (Jesse, 10/23).
+  - One transform, two writers. Nothing on A's path reads from B, so B can never block A.
+- **What the POC really tests:** the mechanism around the transform: trigger, lock, fan-out, safe writes, replays, manifest, quarantine, plus a fair storage comparison.
+  - The DSP-specific logic lives inside the transform and won't carry over to other feeds.
+  - If it works, the team gets a candidate template for its other scheduled, file-based feeds.
 
 | Milestone | Date | What it is |
 |---|---|---|
@@ -80,7 +86,12 @@ See the HLD and the workflow sequence diagram in `dsp-poc-hld-2026-10-28.drawio`
 
 ### How the lock works, compared with Cillian's Glue jobs
 
-Both make sure two runs never overlap. Cillian's Glue jobs do it with two settings (Cillian, Slack, 10/28): the Glue job's maximum concurrency is 1, so Glue rejects a second run, and the Step Function retries on that error (every 60 seconds, doubling, up to 20 tries) until the first run finishes. The POC follows the same rule. The difference is what a second run does when one is already going.
+Both make sure two runs never overlap. The difference is what a second run does when one is already going.
+
+- **Cillian's Glue jobs** use two settings (Cillian, Slack, 10/28):
+  - The Glue job's maximum concurrency is 1, so Glue rejects a second run.
+  - The Step Function retries on that error (every 60 seconds, doubling, up to 20 tries) until the first run finishes.
+- **The POC** follows the same rule, but the second run skips instead of waiting.
 
 | | Cillian's Glue jobs | This POC |
 |---|---|---|
@@ -91,17 +102,55 @@ Both make sure two runs never overlap. Cillian's Glue jobs do it with two settin
 | A stuck run | Glue job's own timeout (value not checked) | 25-minute state-machine timeout, so it can't hold the lock past the next heartbeat |
 | Where you see it | Step Functions retries, Glue run history | Step Functions run history; skipped runs end in a named state |
 
-**Why skip instead of wait.** Each run here works out for itself which hours are still missing, so a skipped run loses nothing, and waiting would only queue runs behind a slow one. For a job that processes only the work it was started for, waiting is the right choice, which is why Cillian's jobs retry. One small edge: two runs started at the same instant could each see the other and both skip. At an hourly cadence that only delays the work by an hour, and the next run catches it.
+**Why skip instead of wait:**
+
+- Each run works out for itself which hours are still missing, so a skipped run loses nothing.
+- Waiting would only queue runs behind a slow one.
+- For a job that processes only the work it was started for, waiting is the right choice, which is why Cillian's jobs retry.
+- Edge case: two runs started at the same instant could each see the other and both skip. At an hourly cadence that delays the work by one hour; the next run catches it.
+
+### What gets built (AWS resources)
+
+All in the sandbox account, defined in Terraform, with the standard tag set. Names follow the sandbox's `rhde-pg-dsp` prefix.
+
+| Resource | Name (proposed) | Purpose |
+|---|---|---|
+| Source files (read only, not created) | `relevatehealth-data`, `home/rh-dsp/pld/`, in the source account **[to confirm]** | Live DSP files. Read access pending (DTE-147); until then the POC reads the curated copy in `rhde-pg-dsp-curated-sandbox`. |
+| S3 bucket (general purpose) | `rhde-pg-dsp-poc-parquet` | Path A output: 6 Parquet files per hour. Proposed folders for the id ledger, manifest and quarantine (team format). |
+| S3 Tables table bucket | `rhde-pg-dsp-poc-iceberg` | Path B output: Iceberg `events` table. A separate bucket type from a normal S3 bucket. |
+| EventBridge Scheduler | `rhde-pg-dsp-poc-hourly` | Hourly trigger; stand-in for the Node heartbeat |
+| Step Functions (Standard) | `rhde-pg-dsp-poc-pipeline` | Lock check, find work, Map (2 at a time), manifest; 25-minute timeout |
+| Lambda | `rhde-pg-dsp-poc-check-lock` | Is another run going? Step Functions read only; no S3 access |
+| Lambda | `rhde-pg-dsp-poc-find-work` | Which hours aren't done yet; reads S3 only |
+| Lambda (container image) + ECR repository | `rhde-pg-dsp-poc-transform` | Python + DuckDB transform; Writers A and B |
+| Athena workgroup | `rhde-pg-dsp-poc` | Query and compare A and B |
+| IAM roles, CloudWatch log groups | One per component | Least-privilege access; logs |
+| Fargate task (only if needed) | `rhde-pg-dsp-poc-transform` | Fallback if an hour outgrows Lambda (A1) |
 
 ## 6. Why these two paths
 
-**Path A is the "do it easy" path.** It is file in, file out, Parquet, whole-file replacement: the shape the warehouse already reads. Jesse's caution on 10/26 ("be intentional with where we experiment ... do we just do it easy?") is exactly why A stands on its own.
+**Path A is the "do it easy" path.**
 
-**Path B is evidence for a decision the team already plans to make.** Jesse said on 10/20 that there will be a data lake, and the choice between S3 Tables, Iceberg managed in-house, or Snowflake is a conversation for "after you guys build your first couple pipelines". Path B gives that conversation real numbers. Because the transform is shared, B costs one extra writer, not a second pipeline.
+- File in, file out, Parquet, whole-file replacement: the shape the warehouse already reads.
+- Jesse's caution on 10/26 ("be intentional with where we experiment ... do we just do it easy?") is why A stands on its own.
 
-**Why build them together.** The comparison is only fair if both sides get identical input and logic. Building B later would mean re-running the transform and arguing about differences that have nothing to do with storage.
+**Path B is evidence for a decision the team already plans to make.**
 
-**Why serverless (Step Functions + Lambda).** The work is a bounded, repeatable unit (one file-hour) on a schedule with no state between runs. Step Functions gives the lock, retries and run history that would otherwise be hand-built, and a backfill fans out without a cluster. It also fits the direction Jesse set on 10/23: after this pipeline, "get off the single node runtime"; the monolith "can't stay a monolith forever".
+- Jesse, 10/20: there will be a data lake; S3 Tables vs Iceberg managed in-house vs Snowflake is a conversation for "after you guys build your first couple pipelines".
+- Path B gives that conversation real numbers.
+- The transform is shared, so B costs one extra writer, not a second pipeline.
+
+**Why build them together.**
+
+- The comparison is only fair if both sides get identical input and logic.
+- Building B later means re-running the transform and arguing about differences that have nothing to do with storage.
+
+**Why serverless (Step Functions + Lambda).**
+
+- The work is a bounded, repeatable unit (one file-hour) on a schedule, with no state between runs.
+- Step Functions gives the lock, retries and run history that would otherwise be hand-built.
+- A backfill fans out without a cluster.
+- Fits Jesse's direction (10/23): after this pipeline, "get off the single node runtime"; the monolith "can't stay a monolith forever".
 
 ### Alternatives considered
 
@@ -153,7 +202,10 @@ Not covered by the template: streaming feeds such as the new DSP's full avails s
 
 ## 9. Path A: the Parquet contract
 
-**Purpose.** Prove the v1 contract works end to end: an hourly DSP file becomes clean Parquet per publisher, with the agreed key, quarantine and replays, on an hourly schedule. This becomes the 11/07 pipe version.
+**Purpose:**
+
+- Prove the v1 contract end to end: an hourly DSP file becomes clean Parquet per publisher, with the agreed key, quarantine and replays, on an hourly schedule.
+- This becomes the 11/07 pipe version.
 
 **What it does, for one hour.** **[TBD: worked example from a real hour in the sandbox: rows in, exact duplicates collapsed, quarantined by reason, dropped by rule, rows out per publisher, files written.]**
 
@@ -168,13 +220,23 @@ Not covered by the template: streaming feeds such as the new DSP's full avails s
 - [ ] Row counts reconcile with the raw files, and every difference has a quarantine reason or a drop rule.
 - [ ] DSP-specific settings (publisher list, checks, output layout) live in config, not in the orchestration.
 
-**Failure, and what happens then.** Path A fails if the contract can't be produced reliably by 11/07: wrong or missing files, non-repeatable reruns, or runtime the hourly cadence can't absorb. Fallback: the same transform runs from the Node heartbeat on the EC2 (Jesse OK'd that route on 10/23), so the contract still ships.
+**Failure, and what happens then:**
+
+- Path A fails if the contract can't be produced reliably by 11/07:
+  - wrong or missing files;
+  - reruns that don't give the same output;
+  - runtime the hourly cadence can't absorb.
+- Fallback: the same transform runs from the Node heartbeat on the EC2 (Jesse OK'd that route on 10/23), so the contract still ships.
 
 ## 10. Path B: the S3 Tables trial
 
 **Purpose.** Decide whether the team likes S3 Tables, using the same input and logic as A, so storage is the only difference.
 
-**What it does.** Writes the same rows as A into one `events` table (partitioned by publisher and day, proposed), replacing the rows for a source file on replay, to match A's whole-file rule. `raw_events` and a lake quarantine view come only if the team keeps Iceberg.
+**What it does:**
+
+- Writes the same rows as A into one `events` table (partitioned by publisher and day, proposed).
+- On replay, replaces the rows for that source file, to match A's whole-file rule.
+- `raw_events` and a lake quarantine view come only if the team keeps Iceberg.
 
 **What we measure (filled in during the POC):**
 
@@ -191,17 +253,30 @@ Not covered by the template: streaming feeds such as the new DSP's full avails s
 
 Plus: S3 Tables holds exactly the same rows as the Parquet files for every hour loaded.
 
-**Success.** The table is filled in with real numbers, the row counts match A for every hour, and the team has enough to say keep, drop, or revisit at larger scale.
+**Success:**
 
-**Reasons to drop it.** It threatens A's dates; replays can't match the whole-file rule cleanly; the maintenance burden is out of proportion to the benefit at this size. Dropping B costs A nothing.
+- The table above is filled in with real numbers.
+- Row counts match A for every hour.
+- The team has enough to say keep, drop, or revisit at larger scale.
 
-**Time-box and stop rule.** **[TBD: Paul's estimate for Scott.]** Proposed rule: if B isn't writing rows that match A by end of day Thu 10/29, it comes out of Monday's demo, A ships alone, and B resumes only after 11/07 if Scott and Jesse want it.
+**Reasons to drop it** (dropping B costs A nothing):
+
+- It threatens A's dates.
+- Replays can't match the whole-file rule cleanly.
+- The maintenance burden is out of proportion to the benefit at this size.
+
+**Time-box and stop rule:**
+
+- Time-box: **[TBD: Paul's estimate for Scott.]**
+- Proposed stop rule: if B isn't writing rows that match A by end of day Thu 10/29:
+  - it comes out of Monday's demo and A ships alone;
+  - B resumes only after 11/07, if Scott and Jesse want it.
 
 ## 11. Why it's worth doing
 
 - **The deliverable is needed regardless.** The DSP has to reach the warehouse by mid-November, keyed and clean. Path A is that work.
 - **Even if B is dropped,** the team gets: a working contract for the current feed; the first real numbers on S3 Tables for batch pipelines; and a tested pattern for lock, fan-out, replays, manifest and quarantine outside the single-node runtime.
-- **Low risk.** Sandbox only: no production buckets, no changes to the Node service, no reads from the enrichment database. Everything is defined as code, prefixed `dsp-poc-` and tagged.
+- **Low risk.** Sandbox only: no production buckets, no changes to the Node service, no reads from the enrichment database. Everything is defined as code, named `rhde-pg-dsp-poc-*` and tagged (section 5).
 - **Built on what the team already uses:** the manifest format, the quarantine format, the no-overlapping-runs rule from Cillian's Glue jobs, the 21-day lookback and the heartbeat.
 - **Cost.** **[TBD: AWS estimate. Expected to be small at POC volume: about 14 scheduled runs a day (sandbox hours, weekdays), a few GB in S3; the sandbox already stops nightly.]**
 
@@ -218,7 +293,13 @@ Plus: S3 Tables holds exactly the same rows as the Parquet files for every hour 
 
 ## 13. Decisions made and open questions
 
-**Decided (Paul, 10/27):** one transform, two writers, A first; id history from a ledger on A's side, window configurable, default full history; six output files per hour from a config list, every publisher every hour; the lake holds `events` only; quarantine stays in the team format.
+**Decided (Paul, 10/27):**
+
+- One transform, two writers, A first.
+- Id history from a ledger on A's side; window configurable, default full history.
+- Six output files per hour from a config list, every publisher every hour.
+- The lake holds `events` only.
+- Quarantine stays in the team format.
 
 **Open (none block Monday; each is a labelled assumption until answered):**
 
@@ -233,7 +314,7 @@ Plus: S3 Tables holds exactly the same rows as the Parquet files for every hour 
 | Whole-file reject threshold (Scott floated ~0.5%) | Jesse and team |
 | Who raises reused ids with the vendor, and what should the pipeline report? | Jesse, Scott |
 | Python Lambda OK next to the Node service? | Jesse and team |
-| Read access for the POC to the live DSP files in the source account (DTE-147): can it be granted, and when? | Jesse and team |
+| Read access for the POC to the live DSP files in the source account (DTE-147): can it be granted, and when? Which bucket holds them: `relevatehealth-data` or `rh-data-processing`? | Jesse and team |
 
 ## 14. Next steps after the demo
 
