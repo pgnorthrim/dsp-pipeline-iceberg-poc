@@ -20,7 +20,7 @@ Target: `dsp-poc-plan-2026-10-28.md` (+ regenerate .docx; check Word lock first)
    or L ledger ids; headroom Kx) vs Scott's 20-25% growth. Ledger (history) is the long-term limiting
    factor, id-check window config is the safety valve. Do NOT claim it covers the 100,000x stream
    (separate streaming solution). ~half day, a few dollars.
-4. **Cillian lock pattern - ANSWERED (Slack 10/28 ~11:10).** His setup: Glue job "Maximum concurrency" = 1
+4. DONE 2026-10-28 - **Cillian lock pattern - ANSWERED (Slack 10/28 ~11:10).** His setup: Glue job "Maximum concurrency" = 1
    (Glue rejects a 2nd run with ConcurrentRunsExceededException) + the Step Function's Retry on that error
    (IntervalSeconds 60, MaxAttempts 20, BackoffRate 2). So his runs WAIT and retry; they don't discard.
    Ours skips (SkippedAlreadyRunning) because FindWork picks up any missed hour on the next run, so waiting

@@ -55,7 +55,7 @@ The POC is built from what Jesse and Scott asked for, not from a favorite patter
 | Hourly gzipped CSV in; one Parquet file per publisher out; check duplicate ids; syntactic cleanup | Jesse, 10/23 | Path A, exactly |
 | "Play with S3 Tables along the way ... see if we like it" | Jesse, 10/23 | Path B, time-boxed |
 | Must originate from the heartbeat | Jesse, 10/23 | Scheduler stand-in for the POC; one-line heartbeat change after Jesse reviews it |
-| Step Function handles the lock; discard if still running (Cillian's Glue pattern) | Jesse, 10/23 | `CheckLock` state, 25-minute timeout |
+| Step Function handles the lock: one run at a time, as Cillian's Glue jobs do | Jesse, 10/23; Cillian, 10/28 | `CheckLock` state, 25-minute timeout (section 5) |
 | No separate job state; use the manifests | Jesse, 10/23 | "Done" = output files exist + manifest entry |
 | Replay replaces the whole file | Jesse, 10/23 and 10/26 | Temp key, then copy over the final key |
 | Quarantine with a reason, in the standard format, not a new data store | Jesse, 10/26 and 10/27 | Team's manifests and `failed-keys/` (sandbox copy) |
@@ -77,6 +77,21 @@ One pipeline, one transform, two writers.
 5. Bad rows go to quarantine with a reason code; every hour gets a manifest entry.
 
 See the HLD and the workflow sequence diagram in `dsp-poc-hld-2026-10-28.drawio`.
+
+### How the lock works, compared with Cillian's Glue jobs
+
+Both make sure only one run works at a time. Cillian's Glue jobs do it with two settings (Cillian, Slack, 10/28): the Glue job's maximum concurrency is 1, so Glue rejects a second run, and the Step Function retries on that error (every 60 seconds, doubling, up to 20 tries) until the first run finishes. The POC follows the same rule. The difference is what a second run does when one is already going.
+
+| | Cillian's Glue jobs | This POC |
+|---|---|---|
+| Rule | One run at a time | Same |
+| Where it's enforced | Glue job setting: maximum concurrency 1 | Step Function `CheckLock` state: looks for another running execution |
+| If a run is already going | The new run waits and retries (60 s, doubling, up to 20 tries) | The new run ends at once as `SkippedAlreadyRunning` |
+| What happens to its work | Done when the earlier run finishes | Picked up by the next hourly run, because `FindWork` looks for every hour not yet done |
+| A stuck run | Glue job's own timeout (value not checked) | 25-minute state-machine timeout, so it can't hold the lock past the next heartbeat |
+| Where you see it | Step Functions retries, Glue run history | Step Functions run history; skipped runs end in a named state |
+
+**Why skip instead of wait.** Each run here works out for itself which hours are still missing, so a skipped run loses nothing, and waiting would only queue runs behind a slow one. For a job that processes only the work it was started for, waiting is the right choice, which is why Cillian's jobs retry. One small edge: two runs started at the same instant could each see the other and both skip. At an hourly cadence that only delays the work by an hour, and the next run catches it.
 
 ## 6. Why these two paths
 
@@ -107,7 +122,7 @@ See the HLD and the workflow sequence diagram in `dsp-poc-hld-2026-10-28.drawio`
 | "What you're working on now will not transfer" to the new DSP (Jesse, 10/21) | Agreed for the DSP-specific parts: parsing, cleanup, key rules and schema are for the current feed only, and nothing in the POC anticipates AdKernel. What can transfer is the mechanism around the transform (table below), for the team's other scheduled, file-based feeds. |
 | Iceberg's benefits show up at terabyte scale with upserts, not on 4 MB files (Jesse, 10/27) | Agreed. B isn't about speed at today's size. It's the first real evidence on S3 Tables for our batch pipelines, one input into the data-lake decision, not the decision itself. |
 | Like-for-like: single-digit shifts in the top metrics are a big business change (Jesse, 10/27) | A passes data through: no NPI filtering for 1.5, no bot filtering. A success criterion is that A's row counts reconcile with the raw files, with every difference explained by a quarantine reason or a documented drop rule. |
-| Orchestration affects everyone | The POC fits the existing heartbeat and reuses the team's manifest, quarantine format and lock pattern. Adopting it as a template is the team's decision; the POC provides the evidence. |
+| Orchestration affects everyone | The POC fits the existing heartbeat and reuses the team's manifest, quarantine format and one-run-at-a-time rule (as in Cillian's Glue jobs). Adopting it as a template is the team's decision; the POC provides the evidence. |
 
 ### What transfers and what doesn't
 
@@ -187,7 +202,7 @@ Plus: S3 Tables holds exactly the same rows as the Parquet files for every hour 
 - **The deliverable is needed regardless.** The DSP has to reach the warehouse by mid-November, keyed and clean. Path A is that work.
 - **Even if B is dropped,** the team gets: a working contract for the current feed; the first real numbers on S3 Tables for batch pipelines; and a tested pattern for lock, fan-out, replays, manifest and quarantine outside the single-node runtime.
 - **Low risk.** Sandbox only: no production buckets, no changes to the Node service, no reads from the enrichment database. Everything is defined as code, prefixed `dsp-poc-` and tagged.
-- **Built on what the team already uses:** the manifest format, the quarantine format, Cillian's lock pattern, the 21-day lookback and the heartbeat.
+- **Built on what the team already uses:** the manifest format, the quarantine format, the one-run-at-a-time rule from Cillian's Glue jobs, the 21-day lookback and the heartbeat.
 - **Cost.** **[TBD: AWS estimate. Expected to be small at POC volume: about 14 scheduled runs a day (sandbox hours, weekdays), a few GB in S3; the sandbox already stops nightly.]**
 
 ## 12. Not in scope for Monday
@@ -227,6 +242,7 @@ Plus: S3 Tables holds exactly the same rows as the Parquet files for every hour 
 
 ## Appendix: sources
 
+- Cillian Kennedy, Slack 2026-10-28 ~11:10: Step Functions `Retry` on `Glue.ConcurrentRunsExceededException` (IntervalSeconds 60, MaxAttempts 20, BackoffRate 2) and Glue job maximum concurrency = 1 (screenshot).
 - Meeting transcripts: standups 2026-10-20, 10-23, 10-26, 10-27; Scott 1:1s 2026-10-20 and 10-27; Jesse's email of 2026-10-21 ("Programmatic DSP Timeline"). Quote-by-quote notes with times: `dsp-poc-proposal-evidence-2026-10-28.md`.
 - Data: DSP row key specification (`dsp-key-spec-2026-10-27`, DTE-132), queries K1-K2; `transaction-id-verdict-2026-10-20`; `status-followups-2026-10-21`.
 - Design: `dsp-poc-what-monday-delivers` (Claude Doc); HLD and sequence diagram `dsp-poc-hld-2026-10-28.drawio`.
