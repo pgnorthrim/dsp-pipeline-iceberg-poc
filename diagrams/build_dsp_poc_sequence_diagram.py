@@ -12,12 +12,15 @@ from-3po/dsp-poc-what-monday-delivers_2026-10-27_2220.md (copy of the Claude Doc
 from-3po/dsp-iceberg-pipeline-poc-spec-for-R3_2026-10-24_1645.md (Phase 3 states),
 dsp-key-spec-2026-10-27.md (D1-D12).
 
+Step badges (blue circles) use the same numbers as the HLD's arrows, so the two can be read side by side.
+
 Render: rsvg-convert -z 1.5 -o dsp-poc-sequence-diagram-2026-10-28.png dsp-poc-sequence-diagram-2026-10-28.svg
 """
 from html import escape
+from pathlib import Path
 
-OUT_SVG = '/home/pgadmin/relevate-health/Docs/diagrams/dsp-poc-sequence-diagram-2026-10-28.svg'
-TITLE = "DSP v1 Pipeline POC — one scheduled run (DTE-151), draft 2026-10-28"
+OUT_SVG = str(Path(__file__).resolve().parent / 'dsp-poc-sequence-diagram-2026-10-28.svg')
+TITLE = "DSP v1 Pipeline POC — one scheduled run (DTE-151), draft 2026-10-28 · numbers match the HLD"
 
 HEADER_Y, HEADER_H, HEADER_W = 30, 60, 180
 ROW_H = 44
@@ -33,6 +36,9 @@ BLUE = ("#CFE8FF", "#2A6FB0")
 YELLOW = ("#FFF3C4", "#B8960C")
 GREEN = ("#DFF2DF", "#3C8D3C")
 RED = ("#FBE0E0", "#B03A3A")
+
+BADGE_FILL = "#1A73E8"  # step badges, same colour as the HLD's
+BADGE_R = 11
 
 
 # ---------------- primitives ----------------
@@ -61,6 +67,10 @@ def P_tab(x, y, w, tag):
 
 def P_note(x1, y, x2, h, lines, fill, stroke):
     return dict(kind="note", x1=x1, y=y, x2=x2, h=h, lines=lines, fill=fill, stroke=stroke)
+
+
+def P_badge(cx, cy, n):
+    return dict(kind="badge", x=cx, y=cy, n=n)
 
 
 def P_actor(x, label, fill, stroke, dashed):
@@ -98,17 +108,33 @@ class Panel:
         self.y += h
         return v
 
-    def message(self, a, b, label, kind="call"):
+    def message(self, a, b, label, kind="call", step=None):
         y = self.nexty()
         x1, x2 = self.x(a), self.x(b)
         self.items.append(P_line(x1, y, x2, y, dashed=(kind != "call"), arrow="solid" if kind == "call" else "open"))
-        self.items.append(P_text((x1 + x2) / 2, y - 6, label, anchor="middle"))
+        if not step:
+            self.items.append(P_text((x1 + x2) / 2, y - 6, label, anchor="middle"))
+            return
+        # badge just left of the label, but never on or left of the leftmost lifeline (+ activation bar);
+        # a label too wide for that starts right after the badge instead of centring
+        text_left = (x1 + x2) / 2 - 0.55 * 13 * len(label) / 2
+        min_badge = min(x1, x2) + 9 + BADGE_R + 4
+        if text_left - 6 - BADGE_R >= min_badge:
+            self.items.append(P_text((x1 + x2) / 2, y - 6, label, anchor="middle"))
+            self.items.append(P_badge(text_left - 6 - BADGE_R, y - 11, step))
+        else:
+            self.items.append(P_badge(min_badge, y - 11, step))
+            self.items.append(P_text(min_badge + BADGE_R + 6, y - 6, label))
 
-    def self_message(self, a, label):
+    def self_message(self, a, label, step=None):
         y = self.nexty()
         x = self.x(a)
         self.items.append(P_path([(x + 8, y), (x + 50, y), (x + 50, y + 18), (x + 8, y + 18)]))
-        self.items.append(P_text(x + 57, y + 13, label))
+        if step:
+            self.items.append(P_badge(x + 57 + BADGE_R, y + 9, step))
+            self.items.append(P_text(x + 57 + 2 * BADGE_R + 6, y + 13, label))
+        else:
+            self.items.append(P_text(x + 57, y + 13, label))
 
     def note(self, a, b, lines, fill="#FFFBE6", stroke="#C9A227"):
         """UML note spanning actors a..b."""
@@ -162,28 +188,32 @@ def build_panels():
         "Part 1 — Trigger, lock, find work",
         [("EventBridge Scheduler\n(hourly stand-in for\nNode heartbeat)", GREY, False),
          ("Step Functions\ndsp-poc (Standard)", BLUE, False),
+         ("CheckLock Lambda\ndsp-check-lock (zip)\nno S3 access", BLUE, False),
          ("FindWork Lambda", BLUE, False),
          ("S3: Input\n(curated DSP copy, sandbox)", YELLOW, False),
-         ("S3: Output A\n(Parquet contract)", GREEN, False)],
-        [120, 380, 640, 900, 1160], 1280)
-    SCHED, SFN, FIND, INPUT, OUTA = range(5)
+         ("S3: Parquet bucket\nrhde-pg-dsp-poc-parquet\n(Output A, the contract)", GREEN, False)],
+        [110, 330, 550, 770, 990, 1210], 1320)
+    SCHED, SFN, LOCK, FIND, INPUT, OUTA = range(6)
     p1.active = {SFN}
 
-    p1.message(SCHED, SFN, "StartExecution (hourly, weekdays 07:00-21:00 ET)")
-    p1.self_message(SFN, "CheckLock: ListExecutions(status = RUNNING)")
-    f = p1.open_frame(SFN, OUTA, "alt", "another execution is running")
+    p1.message(SCHED, SFN, "StartExecution (hourly)", step=1)
+    p1.message(SFN, LOCK, "invoke CheckLock", step=2)
+    p1.self_message(LOCK, "ListExecutions(status = RUNNING), minus itself")
+    p1.message(LOCK, SFN, "locked: true / false", "return")
+    f = p1.open_frame(SFN, OUTA, "alt", "locked = true (another execution is running)")
     p1.self_message(SFN, "Succeed: SkippedAlreadyRunning (overlapping trigger discarded)")
     p1.close_frame(f)
-    p1.message(SFN, FIND, "invoke FindWork")
-    p1.message(FIND, INPUT, "list input files, last 21 days")
+    p1.message(SFN, FIND, "invoke FindWork", step=3)
+    p1.message(FIND, INPUT, "list input files, last 21 days", step=3)
     p1.message(INPUT, FIND, "file-hours (pld_*.csv.gz)", "return")
-    p1.message(FIND, OUTA, "list output keys for those hours")
+    p1.message(FIND, OUTA, "list output keys for those hours", step=3)
     p1.message(OUTA, FIND, "files that exist", "return")
     p1.self_message(FIND, "keep hours missing any of the 6 publisher files; cap 6")
     p1.message(FIND, SFN, "hours[] (oldest first, max 6)", "return")
     p1.note(SFN, OUTA, ["No separate job state: \"done\" = all configured publisher files exist + manifest entry.",
                         "Empty publisher-hour still gets a zero-row file, or FindWork would pick that hour up forever.",
-                        "State-machine timeout 25 min, so a stuck run can't hold the lock past the next trigger."])
+                        "State-machine timeout 25 min, so a stuck run can't hold the lock past the next trigger.",
+                        "FindWork checks only the Parquet bucket, so a failed Writer B hour is not retried (known gap)."])
 
     # Panel 2: per-hour transform
     p2 = Panel(
@@ -198,22 +228,22 @@ def build_panels():
     p2.active = {XF}
 
     outer = p2.open_frame(MAP, QUAR, "loop", "for each hour in hours[] (2 in parallel) → continued in Part 3", pad=110)
-    p2.message(MAP, XF, "invoke(file-hour)")
-    p2.message(XF, IN2, "read pld_<hour>.csv.gz (stream)")
+    p2.message(MAP, XF, "invoke(file-hour)", step=4)
+    p2.message(XF, IN2, "read pld_<hour>.csv.gz (stream)", step=5)
     p2.message(IN2, XF, "rows", "return")
     p2.self_message(XF, "1  validate header")
     alt = p2.open_frame(XF, QUAR, "alt", "header invalid")
-    p2.message(XF, QUAR, "whole file → quarantine, reason code")
+    p2.message(XF, QUAR, "whole file → quarantine, reason code", step=7)
     p2.message(XF, MAP, "failed (bad header)", "return")
     p2.close_frame(alt)
-    p2.message(XF, LEDGER, "write ledger file: ALL rows, before filtering")
+    p2.message(XF, LEDGER, "write ledger file: ALL rows, before filtering", step=6)
     p2.note(XF, LEDGER, ["ledger row = transaction_id, raw publisher label, row hash, source_file, event_ts",
                          "Seeded once with ~40M historical ids (monthly files, sorted by transaction_id)."])
     p2.self_message(XF, "2  clean up; collapse exact duplicates (D3)")
     p2.self_message(XF, "    same id, different data → conflict (D4)")
-    p2.message(XF, LEDGER, "3  semi-join this hour's ids (window: config, default full history)")
+    p2.message(XF, LEDGER, "3  semi-join this hour's ids (window: config, default full history)", step=6)
     p2.message(LEDGER, XF, "ids seen on other rows, any publisher (excl. same source_file)", "return")
-    p2.message(XF, QUAR, "conflicts + reused ids → failed-keys/, reason code (D4, D5)")
+    p2.message(XF, QUAR, "conflicts + reused ids → failed-keys/, reason code (D4, D5)", step=7)
     p2.self_message(XF, "4  drop Test Account + blank publisher; map 9 labels → 6 (D6)")
     p2.self_message(XF, "    key = <publisher>-<transaction_id>; drop os_code, make_id (D1, D2, D10)")
     p2.close_frame(outer)
@@ -226,8 +256,8 @@ def build_panels():
     p3 = Panel(
         "Part 3 — Writers (A first, B second) and manifest",
         [("Transform Lambda\n(continued)", BLUE, False),
-         ("S3: Output A\nParquet zstd, 1 file per\npublisher per hour", GREEN, False),
-         ("S3 Tables (Iceberg)\nOutput B: events\n(time-boxed trial)", GREY, True),
+         ("S3: Parquet bucket\nrhde-pg-dsp-poc-parquet\n1 file/publisher/hour", GREEN, False),
+         ("S3 Tables bucket\nrhde-pg-dsp-poc-iceberg\nevents (time-boxed trial)", GREY, True),
          ("Step Functions\n(continued)", BLUE, False),
          ("S3: Quarantine\nmanifests/ (sandbox)", RED, False)],
         [120, 380, 640, 900, 1160], 1280)
@@ -236,16 +266,16 @@ def build_panels():
 
     outer3 = p3.open_frame(XF3, SFN3, "loop", "(continued from Part 2) same hour", pad=110)
     la = p3.open_frame(XF3, OUT_A, "loop", "for each of the 6 configured publishers (config file)")
-    p3.message(XF3, OUT_A, "COPY TO tmp key (zero rows if none)")
+    p3.message(XF3, OUT_A, "COPY TO tmp key (zero rows if none)", step=8)
     p3.message(XF3, OUT_A, "copy tmp → final key (replaces whole file, D12)")
     p3.close_frame(la)
     ob = p3.open_frame(XF3, OUT_B, "opt", "Writer B: may fail, never fails the hour")
-    p3.message(XF3, OUT_B, "overwrite rows for this source_file (same rows as A)")
+    p3.message(XF3, OUT_B, "overwrite rows for this source_file (same rows as A)", step=9)
     p3.message(OUT_B, XF3, "ok / error (logged, A unaffected)", "return")
     p3.close_frame(ob, dashed_fill="#F7F7F7")
     p3.message(XF3, SFN3, "counts: kept, quarantined by reason; B status", "return")
     p3.close_frame(outer3)
-    p3.message(SFN3, MAN, "RecordManifest: 1 entry per hour (file, job id, status, rows quarantined)")
+    p3.message(SFN3, MAN, "RecordManifest: 1 entry per hour (file, job id, status, rows quarantined)", step=10)
     p3.self_message(SFN3, "Succeed")
     p3.note(OUT_A, SFN3, ["One-way arrows: nothing on A's path reads from S3 Tables.",
                           "Drop the trial and A ships unchanged. Readers: warehouse, Athena, DuckDB read A."])
@@ -301,6 +331,10 @@ def svg_of(p):
             out.append(f'<text x="{x1 + 8}" y="{ty}" font-size="11.5">{esc(line)}</text>')
             ty += 16
         return "\n".join(out)
+    if k == "badge":
+        return (f'<circle cx="{p["x"]}" cy="{p["y"]}" r="{BADGE_R}" fill="{BADGE_FILL}"/>'
+                f'<text x="{p["x"]}" y="{p["y"] + 5}" font-size="14" font-weight="bold" fill="#FFFFFF" '
+                f'text-anchor="middle">{p["n"]}</text>')
     if k == "actor":
         x = p["x"]
         dash = 'stroke-dasharray="6,4"' if p["dashed"] else ""
@@ -388,6 +422,10 @@ def drawio_cells(ox, oy, id_prefix="seq", parent="1"):
             vertex(value, f"shape=note;size=10;html=1;whiteSpace=nowrap;fillColor={p['fill']};strokeColor={p['stroke']};"
                    "fontSize=11.5;align=left;verticalAlign=top;spacingLeft=6;spacingTop=2;fontColor=#232F3E;",
                    p["x1"], p["y"], p["x2"] - p["x1"], p["h"])
+        elif k == "badge":
+            vertex(str(p["n"]), f"ellipse;html=1;fillColor={BADGE_FILL};strokeColor=none;fontColor=#FFFFFF;fontSize=14;"
+                   "fontStyle=1;align=center;verticalAlign=middle;spacing=0;",
+                   p["x"] - BADGE_R, p["y"] - BADGE_R, 2 * BADGE_R, 2 * BADGE_R)
         elif k == "actor":
             value = "<br>".join(escape(l) for l in p["label"].split("\n"))
             vertex(value, f"rounded=1;arcSize=10;html=1;whiteSpace=wrap;fillColor={p['fill']};strokeColor={p['stroke']};"

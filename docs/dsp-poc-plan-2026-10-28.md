@@ -68,6 +68,8 @@ The POC is built from what Jesse and Scott asked for, not from a favorite patter
 
 One pipeline, one transform, two writers.
 
+![One transform, two outputs. Solid: Path A, the deliverable. Dashed: Path B, the time-boxed S3 Tables trial. Nothing on Path A reads from Path B.](../diagrams/dsp-poc-two-paths-2026-10-28.png){width=6.5in}
+
 1. Once an hour, EventBridge Scheduler (stand-in for the Node heartbeat) starts a Step Function.
 2. The Step Function checks the lock, finds hours that aren't done yet (up to 6 per run), and runs each one through the transform, two at a time.
 3. The transform (container Lambda, Python + DuckDB) reads the file, validates the header, records every row's id in an id ledger, collapses exact duplicates, runs the dataset-wide id check, drops Test Account and blank-publisher rows, maps the labels to 6 publishers and builds the key.

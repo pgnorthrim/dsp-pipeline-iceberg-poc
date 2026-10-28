@@ -24,5 +24,5 @@ Target: `dsp-poc-plan-2026-10-28.md` (+ regenerate .docx; check Word lock first)
    lock works" note in section 5, cite his source. If his lock is Glue's max-concurrent-runs setting,
    reword to "same discard-if-running rule, done in Step Functions."
 5. Assumptions table "#" column width fix in the .docx.
-6. **Two-path overview figure** (`diagrams/dsp-poc-two-paths-2026-10-28.png`): insert in section 5 "What the POC is"
+6. DONE 2026-10-28 11:08 - **Two-path overview figure** (`diagrams/dsp-poc-two-paths-2026-10-28.png`): insert in section 5 "What the POC is"
    (or section 1 Summary) once Paul OKs the picture.
