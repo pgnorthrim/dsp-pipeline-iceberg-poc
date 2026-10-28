@@ -1,0 +1,11 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ListOwnStateMachineExecutions",
+      "Effect": "Allow",
+      "Action": "states:ListExecutions",
+      "Resource": "arn:aws:states:<region>:<account>:stateMachine:dsp-pipeline-poc"
+    }
+  ]
+}

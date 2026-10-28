@@ -1,0 +1,43 @@
+{
+  "Comment": "DSP pipeline POC - CheckLock sample (FindWork is a placeholder)",
+  "TimeoutSeconds": 1500,
+  "StartAt": "CheckLock",
+  "States": {
+    "CheckLock": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "dsp-check-lock",
+        "Payload": {
+          "state_machine_arn.$": "$$.StateMachine.Id",
+          "execution_arn.$": "$$.Execution.Id"
+        }
+      },
+      "ResultSelector": {
+        "locked.$": "$.Payload.locked",
+        "running.$": "$.Payload.running"
+      },
+      "ResultPath": "$.lock",
+      "Next": "IsLocked"
+    },
+    "IsLocked": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.lock.locked",
+          "BooleanEquals": true,
+          "Next": "SkippedAlreadyRunning"
+        }
+      ],
+      "Default": "FindWork"
+    },
+    "SkippedAlreadyRunning": {
+      "Type": "Succeed"
+    },
+    "FindWork": {
+      "Type": "Pass",
+      "Comment": "placeholder for the real FindWork Lambda",
+      "End": true
+    }
+  }
+}

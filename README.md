@@ -15,6 +15,7 @@ find work, Map over hours, record manifest). Quarantine uses the team's rhde-qua
 |---|---|
 | `docs/` | POC plan (draft), evidence notes, queued edits |
 | `docs/from-3po/` | Design baseline specs (3PO 10/24, Paul's decisions 10/27, what Monday delivers) |
+| `docs/lambda/` | Explained sample Lambdas (Python). `dsp-check-lock/`: the CheckLock step, with tests |
 | `diagrams/` | HLD + workflow (.drawio), two-path overview, and the scripts that generate them |
 | `src/transform/` | Transform Lambda (not started) |
 | `infra/` | Terraform for Step Functions, Lambda, S3 Tables (not started) |
