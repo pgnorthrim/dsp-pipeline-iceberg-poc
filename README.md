@@ -1,4 +1,4 @@
-# DSP pipeline flow POC
+# DSP pipeline + Iceberg POC
 
 Proof of concept for the DSP v1 pipeline (Jira DTE-151; HLD DTE-152). Hourly DSP file in, one transform
 (Python + DuckDB in a container Lambda), two outputs:
