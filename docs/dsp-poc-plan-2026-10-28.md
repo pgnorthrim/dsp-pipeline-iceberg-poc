@@ -145,7 +145,7 @@ Not covered by the template: streaming feeds such as the new DSP's full avails s
 **Success (each pass/fail):**
 
 - [ ] The largest hour finishes in under 5 minutes in Lambda, or the Fargate route works.
-- [ ] One correct Parquet file per publisher per hour, matching the agreed output schema **[TBD: output schema draft, for Jesse's review]**. Empty hours produce an empty file, not a missing one.
+- [ ] One correct Parquet file per publisher per hour, matching the agreed output schema **[TBD: output schema draft, for Jesse and team to review]**. Empty hours produce an empty file, not a missing one.
 - [ ] Rerunning an hour gives identical output, with no duplicates.
 - [ ] An overlapping trigger is discarded, never run twice.
 - [ ] Duplicates, id conflicts and reused ids are counted and quarantined with reasons, in the team's format.
@@ -192,7 +192,7 @@ Plus: S3 Tables holds exactly the same rows as the Parquet files for every hour 
 
 ## 12. Not in scope for Monday
 
-- Node heartbeat change (the POC uses a scheduler stand-in; the change comes after Jesse's review)
+- Node heartbeat change (the POC uses a scheduler stand-in; the change comes after Jesse and team review it)
 - Real enrichment (stub until Cillian's endpoint is ready)
 - Full historical backfill (one week only, to prove fan-out and replays)
 - Monthly roll-up of the id ledger (added for the 11/07 pipe version)
@@ -209,15 +209,15 @@ Plus: S3 Tables holds exactly the same rows as the Parquet files for every hour 
 
 | Question | Who |
 |---|---|
-| Six publisher files, or three? If three, what happens to Relevate Games and Office Ally? | Jesse |
-| Age-based archive: how long does DSP data stay active? (sets the id-check window) | Jesse |
-| How long does Redshift keep DSP history, and does it treat the key as unique? | Jesse |
-| Id check scope (O1): quarantine only kept-publisher rows, checked against all rows? | Jesse, Cillian |
-| Id conflicts (O2): quarantine both rows or only the later one? (Scott's view differs from D4) | Jesse, Cillian |
-| Whole-file reject threshold (Scott floated ~0.5%) | Jesse |
+| Six publisher files, or three? If three, what happens to Relevate Games and Office Ally? | Jesse and team |
+| Age-based archive: how long does DSP data stay active? (sets the id-check window) | Jesse and team |
+| How long does Redshift keep DSP history, and does it treat the key as unique? | Jesse and team |
+| Id check scope (O1): quarantine only kept-publisher rows, checked against all rows? | Jesse and team (Cillian) |
+| Id conflicts (O2): quarantine both rows or only the later one? (Scott's view differs from D4) | Jesse and team (Cillian) |
+| Whole-file reject threshold (Scott floated ~0.5%) | Jesse and team |
 | Who raises reused ids with the vendor, and what should the pipeline report? | Jesse, Scott |
-| Python Lambda OK next to the Node service? | Jesse |
-| Cross-account read on the source bucket (DTE-147) | Jesse |
+| Python Lambda OK next to the Node service? | Jesse and team |
+| Cross-account read on the source bucket (DTE-147) | Jesse and team |
 
 ## 14. Next steps after the demo
 

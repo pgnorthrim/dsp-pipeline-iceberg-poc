@@ -26,4 +26,6 @@ Related: `pgnorthrim/dsp-analysis-sandbox` (EC2 + DuckDB + Aurora sandbox the PO
 ## Diagrams
 
 Regenerate with `python -I diagrams/build_dsp_poc_hld.py` (also builds the sequence diagram) and
-`python -I diagrams/build_dsp_poc_two_paths.py`. Do not regenerate over a hand-edited `.drawio`.
+`python -I diagrams/build_dsp_poc_two_paths.py`. The scripts are the master: change the script and
+rerun, don't hand-edit the `.drawio`. HLD PNG: draw.io CLI (command in the script's docstring); sequence PNG:
+`rsvg-convert -z 1.5`. Step badges in the HLD and the sequence diagram use the same numbers.

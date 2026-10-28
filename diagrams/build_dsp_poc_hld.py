@@ -135,7 +135,7 @@ icon("iam", label("IAM roles", "least privilege per function"), "identity_and_ac
 group("sfn", "<b>AWS Step Functions workflow</b><br>dsp-poc (Standard) · 25 min timeout",
       "group_aws_step_functions_workflow", "#CD2264", "#CD2264", 280, 130, 500, 860)
 vertex("start", "Start", "ellipse;html=1;fillColor=#FFFFFF;strokeColor=#232F3E;strokeWidth=1.5;fontSize=11;", 505, 180, 50, 50)
-task("lock", "<b>CheckLock</b> · dsp-check-lock (zip)<br>ListExecutions RUNNING, minus itself · no S3",
+task("lock", "<b>CheckLock</b> · dsp-check-lock (zip)<br>ListExecutions RUNNING, minus itself<br>no S3 access",
      390, 260, 280, 56)
 vertex("locked", "locked?", "rhombus;html=1;fillColor=#FFFFFF;strokeColor=#232F3E;strokeWidth=1.5;fontSize=11;",
        480, 345, 100, 60)
@@ -224,7 +224,7 @@ edge("e3a", "find", "input", "list input (21 days)", step=3, color=STORAGE, exit
 edge("e3b", "find", "outa", "check outputs exist", step=3, color=STORAGE, exit=(1, 0.85), entry=(0, 0.13),
      points=[(845, 491), (845, 580)], pos=-0.45, offset=(0, 12))
 edge("e5", "input", "xf", "read CSV.gz", step=5, color=STORAGE, exit=(0, 0.92), entry=(1, 0.04),
-     points=[(815, 503), (815, 587)], pos=0.55, offset=(0, 10))
+     points=[(815, 503), (815, 587)], pos=0.8, offset=(0, -13))
 edge("e8", "xf", "outa", "Writer A first: tmp → final key", step=8, color=STORAGE, exit=(1, 0.17), entry=(0, 0.5),
      offset=(0, 14))
 edge("e6", "xf", "ledger", "write all ids / id check (D5)", step=6, color=STORAGE, both=True, exit=(1, 0.73), entry=(0, 0.5),
@@ -234,10 +234,10 @@ edge("e9", "xf", "outb", "Writer B second (may fail)", step=9, color=GREY, dashe
 edge("e7", "xf", "quar", "failed rows, reason codes", step=7, color="#DD344C", exit=(1, 0.95), entry=(0, 0.25),
      points=[(850, 741.5), (850, 828.5)], pos=0.3, offset=(-40, 0))
 edge("e10", "manifest", "quar", "RecordManifest", step=10, color="#DD344C", exit=(1, 0.5), entry=(0, 0.5), offset=(10, 12))
-edge("e11", "athena", "outa", "query", step=11, color=ANALYTICS, exit=(0, 0.5), entry=(1, 0.3),
-     points=[(1225, 489), (1225, 593)], pos=-0.6)
+edge("e11", "athena", "outa", "query", step=11, color=ANALYTICS, exit=(0, 0.5), entry=(0.8, 0),
+     points=[(1225, 489), (1225, 540), (962, 540)], pos=0.1)
 edge("e13", "src", "input", "DTE-147 cross-account read (pending); POC uses the curated copy", color=GREY, dashed=True,
-     exit=(0.5, 0), entry=(0.5, 0), points=[(1715, 118), (939, 118)])
+     exit=(0, 0.5), entry=(0.5, 0), points=[(1600, 199), (1600, 100), (939, 100)])
 
 # ---------------- sequence diagram, under the HLD (same content as dsp-poc-sequence-diagram-2026-10-28.png) ----------------
 SEQ_Y = 1310
