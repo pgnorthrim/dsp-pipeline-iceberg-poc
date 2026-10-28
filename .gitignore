@@ -1,0 +1,30 @@
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+terraform.tfvars
+crash.log
+*.tfplan
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Data (never in git)
+*.duckdb
+*.parquet
+*.csv.gz
+
+# IDE (PyCharm settings stay local)
+.idea/
+.vscode/
+
+# Office lock files
+~$*
